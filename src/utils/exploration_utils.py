@@ -38,3 +38,28 @@ def check_key_uniqueness(df: DataFrame, key_cols: list) -> dict:
         "duplicate_rows": total - distinct,
         "null_keys": null_keys,
     }
+
+
+
+
+def check_duplicates(
+    df: DataFrame,
+    columns: list[str] | None = None
+) -> None:
+    # Use all columns if no column list is provided
+    cols = columns if columns is not None else df.columns
+
+    # Validate column names
+    invalid_cols = [col for col in cols if col not in df.columns]
+    if invalid_cols:
+        raise ValueError(f"Columns not found: {invalid_cols}")
+
+    total_rows = df.count()
+
+    distinct_rows = df.select(*cols).distinct().count()
+
+    duplicate_count = total_rows - distinct_rows
+
+    print(f"Total rows: {total_rows}")
+    print(f"Distinct combinations: {distinct_rows}")
+    print(f"Duplicate rows: {duplicate_count}")
