@@ -1,25 +1,40 @@
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, when, sum, desc
+from pyspark.sql import DataFrame, functions as F
 
-def count_nulls(df, spark):
-    total_rows = df.count()
+FAKE_NULLS = ["", "NA", "N/A", "null", "NULL", "none", "None"]
 
-    null_counts = df.select([
-        sum(when(col(c).isNull(), 1).otherwise(0)).alias(c)
-        for c in df.columns
-    ]).first().asDict()
+
+def profile_nulls(df: DataFrame) -> DataFrame:
+    """Null count and % per column, in one Spark job.
+    Strings also count as null if empty or one of FAKE_NULLS."""
+    aggs = [F.count(F.lit(1)).alias("__total__")]
+    for name, dtype in df.dtypes:
+        bad = F.col(name).isNull()
+        if dtype == "string":
+            bad = bad | F.trim(F.col(name)).isin(*FAKE_NULLS)
+        aggs.append(F.sum(F.when(bad, 1).otherwise(0)).alias(name))
+
+    row = df.agg(*aggs).first().asDict()
+    total = row.pop("__total__")
 
     rows = [
-        (
-            column,
-            int(null_counts[column] or 0),
-            round((null_counts[column] or 0) / total_rows * 100, 2)
-            if total_rows else 0.0
-        )
-        for column in df.columns
+        (c, int(n or 0), round((n or 0) / total * 100, 2) if total else 0.0)
+        for c, n in row.items()
     ]
+    return df.sparkSession.createDataFrame(
+        rows, ["column_name", "null_count", "null_percentage"]
+    ).orderBy(F.desc("null_count"))
 
-    return spark.createDataFrame(
-        rows,
-        ["column_name", "null_count", "null_percentage"]
-    ).orderBy(desc("null_count"))
+
+def check_key_uniqueness(df: DataFrame, key_cols: list) -> dict:
+    """Is the supposed key really unique? Are any key values null?"""
+    total = df.count()
+    distinct = df.select(*key_cols).distinct().count()
+    null_keys = df.filter(
+        " OR ".join(f"`{c}` IS NULL" for c in key_cols)
+    ).count()
+    return {
+        "rows": total,
+        "distinct_keys": distinct,
+        "duplicate_rows": total - distinct,
+        "null_keys": null_keys,
+    }
