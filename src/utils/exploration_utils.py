@@ -2,7 +2,6 @@ from pyspark.sql import DataFrame, functions as F
 
 FAKE_NULLS = ["", "NA", "N/A", "null", "NULL", "none", "None"]
 
-
 def profile_nulls(df: DataFrame) -> DataFrame:
     """Null count and % per column, in one Spark job.
     Strings also count as null if empty or one of FAKE_NULLS."""
